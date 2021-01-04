@@ -7,7 +7,7 @@ import openstudio
 settings = ifcopenshell.geom.settings()
 settings.set(settings.USE_WORLD_COORDS, True)
 
-file = ifcopenshell.open('path/test.ifc')
+file = ifcopenshell.open('./test.ifc')
 
 def three2two(inv_trans, point3d):
   vertex = inv_trans * point3d
