@@ -1,3 +1,4 @@
+  
 
 import numpy as np
 from mpl_toolkits.mplot3d import Axes3D
@@ -9,6 +10,7 @@ import ifcopenshell
 import ifcopenshell.geom as geom
 from skgeom import *
 import skgeom
+import pyclipper
 
 settings = ifcopenshell.geom.settings()
 settings.set(settings.USE_WORLD_COORDS, True)
@@ -71,23 +73,71 @@ for building_element in file.by_type('IfcBuildingElement'):
         plane = key
         polygons = value
         break
+    # polygons.append((skgeom.Polygon(list(map(lambda point: plane.to_2d(point), points)))).coords.tolist())
     polygons.append(skgeom.Polygon(list(map(lambda point: plane.to_2d(point), points))))
     
     plane2polygons[plane] = polygons
   
   building_element2polyhedron_3[building_element] = polyhedron
 
+SCALING_FACTOR = 1e4
+
+def get_clipper(subjects, clips):
+  clipper = pyclipper.Pyclipper()
+  
+  clipper.AddPaths(pyclipper.scale_to_clipper(subjects, SCALING_FACTOR), pyclipper.PT_SUBJECT, True)
+  clipper.AddPaths(pyclipper.scale_to_clipper(clips, SCALING_FACTOR), pyclipper.PT_CLIP, True)
+  
+  return clipper
+
+def execute_clipping(clipper, type):
+  return pyclipper.scale_from_clipper(clipper.Execute(type, pyclipper.PFT_EVENODD, pyclipper.PFT_EVENODD), SCALING_FACTOR)
+
+def clipping(subjects, clips, operation):
+  clipper = get_clipper(subjects, clips)
+  
+  if operation == "union": return execute_clipping(clipper, pyclipper.CT_UNION)
+  if operation == "intersection": return execute_clipping(clipper, pyclipper.CT_INTERSECTION)
+  if operation == "difference": return execute_clipping(clipper, pyclipper.CT_DIFFERENCE)
+  
+  union = execute_clipping(clipper, pyclipper.CT_UNION)
+  intersection = execute_clipping(clipper, pyclipper.CT_INTERSECTION)
+  
+  if not intersection: return union
+  
+  clipper = get_clipper(union, intersection)
+  
+  return execute_clipping(clipper, pyclipper.CT_DIFFERENCE)
+
 for plane, polygons in plane2polygons.items():
+  # solution = [polygons[0]]
+  # for polygon in polygons[1:]:
+    # solution = clipping(solution, [polygon], "xor")
+    
+  # print([plane.a(), plane.b(), plane.c(), plane.d()])
+  # for polygon in solution.polygons:
+    # for vertex in polygon.outer_boundary().coords:
+  # for polygon in solution:
+    # print(list(map(lambda vertex: plane.to_3d(Point2(vertex[0], vertex[1])), polygon)))
+  # print("")
+  
   solution = skgeom.PolygonSet()
   for polygon in polygons:
     solution = solution.symmetric_difference(polygon)
   
-  print([plane.a(), plane.b(), plane.c(), plane.d()])
   for polygon in solution.polygons:
     for vertex in polygon.outer_boundary().coords:
-      print(Point2(vertex[0], vertex[1]))
-      # print(plane.to_3d(Point2(vertex[0], vertex[1])))
+      # print(Point2(vertex[0], vertex[1]))
+      print(plane.to_3d(Point2(vertex[0], vertex[1])))
     print("")
   print("")
+  
+  # print([plane.a(), plane.b(), plane.c(), plane.d()])
+  # for polygon in solution.polygons:
+    # for vertex in polygon.outer_boundary().coords:
+      # print(Point2(vertex[0], vertex[1]))
+      # print(plane.to_3d(Point2(vertex[0], vertex[1])))
+    # print("")
+  # print("")
   
   plane2polygons[plane] = solution
