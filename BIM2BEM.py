@@ -1,4 +1,5 @@
 
+import math
 import ifcopenshell
 import ifcopenshell.geom as geom
 from skgeom import *
@@ -7,12 +8,27 @@ import numpy as np
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import connected_components
 
+def are_equal(plane_a, plane_b):
+  ratio = plane_a.d() / plane_b.d()
+  
+  if ratio != plane_a.a() / plane_b.a(): return False
+  if ratio != plane_a.b() / plane_b.b(): return False
+  if ratio != plane_a.c() / plane_b.c(): return False
+  
+  return True
+  
+plane_1 = skgeom.Plane3(-0, -0, -0.8, 2.4)
+plane_2 = skgeom.Plane3(0, 0, -12, 36)
+print(are_equal(plane_1, plane_2))
+
+print(puta)
+
 settings = ifcopenshell.geom.settings()
 settings.set(settings.USE_WORLD_COORDS, True)
 
 file = ifcopenshell.open('./test.ifc')
 
-building_element2polygons = {}
+building_element2polygon_set = {}
 for building_element in file.by_type('IfcBuildingElement'):
   if not (building_element.is_a('IfcWall') or building_element.is_a('IfcSlab')): continue
   
@@ -30,29 +46,73 @@ for building_element in file.by_type('IfcBuildingElement'):
 
     is_opposite = False
     polygon_sets = [skgeom.PolygonSet(), skgeom.PolygonSet()]
-    for key, value in plane2polygon_sets.items():
-      is_opposite = key == plane.opposite()
-      if key == plane or is_opposite:
-        plane = key
-        polygon_sets = value
-        if is_opposite: points.reverse()
+    for building_element_plane, building_element_polygon_sets in plane2polygon_sets.items():
+      is_opposite = building_element_plane == plane.opposite()
+      if is_opposite: points.reverse()
+      if building_element_plane == plane or is_opposite:
+        plane = building_element_plane
+        polygon_sets = building_element_polygon_sets
         break
     index = (0,1)[is_opposite]
     polygon_sets[index] = polygon_sets[index].join(skgeom.Polygon(list(map(lambda point: plane.to_2d(point), points))))
 
     plane2polygon_sets[plane] = polygon_sets
   
-  building_element2polygons[building_element] = {plane: polygon_sets[0].symmetric_difference(polygon_sets[1]) for plane, polygon_sets in plane2polygon_sets.items()}
+  building_element2polygon_set[building_element] = {plane: polygon_sets[0].symmetric_difference(polygon_sets[1]) for plane, polygon_sets in plane2polygon_sets.items()}
 
-for building_element, plane2polygon_set in building_element2polygons.items():
-  print(building_element)
+def translate_vertex(vertex, old_plane, new_plane):
+  return new_plane.to_2d(old_plane.to_3d(Point2(vertex[0], vertex[1])))
   
-  print(len(plane2polygon_set))
-  for plane, polygon_set in plane2polygon_set.items():
-    print(plane)
-    for polygon in polygon_set.polygons: print(polygon)
-    # for polygon in polygon_set.polygons: print(list(map(lambda vertex: plane.to_3d(Point2(vertex[0], vertex[1])), polygon.outer_boundary().coords)))
+def translate_polygon_set(polygon_set, old_plane, new_plane, is_opposite):
+  new_polygons = []
+  
+  for polygon in polygon_set.polygons:
+    points = list(map(lambda vertex: translate_vertex(vertex, old_plane, new_plane), polygon.outer_boundary().coords))
+    if is_opposite: points.reverse()
+    outer = skgeom.Polygon(points)
+    holes = []
+    for hole in polygon.holes:
+      points = list(map(lambda vertex: translate_vertex(vertex, old_plane, new_plane), hole.coords))
+      if is_opposite: points.reverse()
+      holes.append(skgeom.Polygon(points))
+    new_polygons.append(skgeom.PolygonWithHoles(outer, holes))
+  
+  return skgeom.PolygonSet(new_polygons)
+      
+plane2polygon_set = {}
+for building_element, building_element_plane2polygon_set in building_element2polygon_set.items():
+  for plane, polygon_set in building_element_plane2polygon_set.items():
+    for global_plane, global_polygon_set in plane2polygon_set.items():
+      is_opposite = global_plane == plane.opposite()
+      if global_plane == plane or is_opposite:
+        polygon_set = global_polygon_set.symmetric_difference(translate_polygon_set(polygon_set, plane, global_plane, is_opposite))
+        plane = global_plane
+        break
+        
+    plane2polygon_set[plane] = polygon_set
 
+planes = list(plane2polygon_set.keys())
+print(planes[9])
+print(planes[10])
+print(planes[9] == planes[10])
+plane = planes[9].opposite()
+print(plane)
+print(planes[10])
+print(plane == planes[10])
+
+# count = 0
+# for plane, polygon_set in plane2polygon_set.items():
+  # print(count)
+  # print(plane)
+  # for polygon in polygon_set.polygons: 
+    # print("outer:")
+    # print(list(map(lambda vertex: plane.to_3d(Point2(vertex[0], vertex[1])), polygon.outer_boundary().coords)))
+    # for hole in polygon.holes:
+      # print("hole:")
+      # print(list(map(lambda vertex: plane.to_3d(Point2(vertex[0], vertex[1])), hole.coords)))
+  # count += 1
+  # print("")
+  
 print(puta)
 
 def cross_product(u, v):
