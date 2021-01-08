@@ -9,20 +9,152 @@ from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import connected_components
 
 def are_equal(plane_a, plane_b):
-  ratio = plane_a.d() / plane_b.d()
+  normal_a = plane_a.orthogonal_vector()
+  normal_b = plane_b.orthogonal_vector()
   
-  if ratio != plane_a.a() / plane_b.a(): return False
-  if ratio != plane_a.b() / plane_b.b(): return False
-  if ratio != plane_a.c() / plane_b.c(): return False
+  length_a = math.sqrt(normal_a.squared_length())
+  length_b = math.sqrt(normal_b.squared_length())
+  
+  aux = normal_a * normal_b / length_a / length_b - 1
+  if aux > 1e-6 or aux < -1e-6: return False
+  
+  aux = plane_a.d() / length_a - plane_b.d() / length_b
+  if aux > 1e-6 or aux < -1e-6: return False
   
   return True
+
+
+def append_points(obj, points):
+  if isinstance(obj, skgeom._skgeom.Polygon):
+    for coord in obj.coords: points.append(skgeom.Point2(coord[0], coord[1]))
+      
+    return True
+    
+  if isinstance(obj, skgeom._skgeom.PolygonWithHoles):
+    append_points(obj.outer_boundary(), points)
+    for hole in obj.holes: append_points(hole, points)
+      
+    return True
+    
+  if isinstance(obj, skgeom._skgeom.PolygonSet):
+    for polygon in obj.polygons: append_points(polygon, points)
+    
+    return True
+
+def replace_points(obj, grid):
+  if isinstance(obj, skgeom._skgeom.Polygon):
+    points = []
+    
+    for coord in obj.coords:
+      point = skgeom.Point2(coord[0], coord[1])
+      points.append([x for x in grid if skgeom.squared_distance(point, x) < 1e-6][0])
+    
+    return skgeom.Polygon(points)
+    
+  if isinstance(obj, skgeom._skgeom.PolygonWithHoles):
+    outer_boundary = replace_points(obj.outer_boundary(), grid)
+    holes = list(map(lambda hole: replace_points(hole, grid), obj.holes))
+    
+    return skgeom.PolygonWithHoles(outer_boundary, holes)
+    
+  if isinstance(obj, skgeom._skgeom.PolygonSet):
+    polygons = list(map(lambda polygon: replace_points(polygon, grid), obj.polygons))
+    
+    return skgeom.PolygonSet(polygons)
+
+def remove_collinear_vertices(obj):
+  if isinstance(obj, skgeom._skgeom.Polygon):
+    points = []
+    
+    for coord in obj.coords:
+      point = skgeom.Point2(coord[0], coord[1])
+      if len(points) > 0 and skgeom.squared_distance(points[-1], point) < 1e-6: points.pop()
+      elif len(points) > 1 and skgeom.collinear(points[-2], points[-1], point): points.pop()
+      points.append(point)
+    
+    if len(points) > 0 and skgeom.squared_distance(points[-1], points[0]) < 1e-6: points.pop()
+    elif len(points) > 1 and skgeom.collinear(points[-2], points[-1], points[0]): points.pop()
+    
+    return skgeom.Polygon(points)
+    
+  if isinstance(obj, skgeom._skgeom.PolygonWithHoles):
+    outer_boundary = remove_collinear_vertices(obj.outer_boundary())
+    holes = list(map(lambda hole: remove_collinear_vertices(hole), obj.holes))
+    holes = [hole for hole in holes if not hole.area() > -1e-6]
+    
+    return skgeom.PolygonWithHoles(outer_boundary, holes)
+    
+  if isinstance(obj, skgeom._skgeom.PolygonSet):
+    polygons = list(map(lambda polygon: remove_collinear_vertices(polygon), obj.polygons))
+
+    return skgeom.PolygonSet(polygons)
+
+def get_area(obj):
+  if isinstance(obj, skgeom._skgeom.Polygon):
+    return obj.area()
+    
+  if isinstance(obj, skgeom._skgeom.PolygonWithHoles):
+    area = get_area(obj.outer_boundary())
+    for hole in obj.holes: area += get_area(hole)
+    
+    return area
+    
+  if isinstance(obj, skgeom._skgeom.PolygonSet):
+    area = 0.0
+    for polygon in obj.polygons: area += get_area(polygon)
+
+    return area
+    
+def print_polygon(obj):
+  if isinstance(obj, skgeom._skgeom.Polygon):
+    print(obj.coords)
+    
+  if isinstance(obj, skgeom._skgeom.PolygonWithHoles):
+    print("outer:")
+    print_polygon(obj.outer_boundary())
+    print("holes:")
+    for hole in obj.holes: print_polygon(hole)
+    
+  if isinstance(obj, skgeom._skgeom.PolygonSet):
+    for polygon in obj.polygons: print_polygon(polygon)
+
+    return area
+    
+def clipping(subjects, clips, boolean_operation):  
+  # points = []
   
-plane_1 = skgeom.Plane3(-0, -0, -0.8, 2.4)
-plane_2 = skgeom.Plane3(0, 0, -12, 36)
-print(are_equal(plane_1, plane_2))
+  # append_points(subjects, points)
+  # append_points(clips, points)
+  
+  # row = []
+  # col = []
+  # data = []
+  # for id_i, point_i in enumerate(points):
+    # for id_j, point_j in enumerate(points[id_i+1:]):
+      # if skgeom.squared_distance(point_i, point_j) < 1e-6:
+        # row.append(id_i)
+        # col.append(id_j+id_i+1)
+        # data.append(1)
+  # n_components, labels = connected_components(csgraph=csr_matrix((np.array(data), (np.array(row), np.array(col))), shape=(len(points), len(points))), directed=False, return_labels=True)
+  
+  # new_points = []
+  # for x in range(0, n_components):
+    # indices = (np.where(labels == x))[0]
+    # if len(indices) == 1:
+      # new_points.append(points[indices[0]])
+    # else:
+      # old_points = list(map(lambda id: points[id], indices))
+      # new_points.append(skgeom.centroid(skgeom.Polygon(old_points)))
+  
+  # subjects = replace_points(subjects, points)
+  # clips = replace_points(clips, points)
 
-print(puta)
+  method_to_call = getattr(subjects, boolean_operation)
+  result = method_to_call(clips)
 
+  return result
+  return remove_collinear_vertices(result)
+  
 settings = ifcopenshell.geom.settings()
 settings.set(settings.USE_WORLD_COORDS, True)
 
@@ -47,18 +179,31 @@ for building_element in file.by_type('IfcBuildingElement'):
     is_opposite = False
     polygon_sets = [skgeom.PolygonSet(), skgeom.PolygonSet()]
     for building_element_plane, building_element_polygon_sets in plane2polygon_sets.items():
-      is_opposite = building_element_plane == plane.opposite()
+      is_opposite = are_equal(building_element_plane, plane.opposite())
       if is_opposite: points.reverse()
-      if building_element_plane == plane or is_opposite:
+      if are_equal(building_element_plane, plane) or is_opposite:
         plane = building_element_plane
         polygon_sets = building_element_polygon_sets
         break
     index = (0,1)[is_opposite]
-    polygon_sets[index] = polygon_sets[index].join(skgeom.Polygon(list(map(lambda point: plane.to_2d(point), points))))
+    polygon_sets[index] = clipping(polygon_sets[index], skgeom.Polygon(list(map(lambda point: plane.to_2d(point), points))), "join")
 
     plane2polygon_sets[plane] = polygon_sets
   
-  building_element2polygon_set[building_element] = {plane: polygon_sets[0].symmetric_difference(polygon_sets[1]) for plane, polygon_sets in plane2polygon_sets.items()}
+  building_element2polygon_set[building_element] = {plane: clipping(polygon_sets[0], polygon_sets[1], "symmetric_difference") for plane, polygon_sets in plane2polygon_sets.items()}
+
+# for building_element, building_element_plane2polygon_set in building_element2polygon_set.items():
+  # print(building_element)
+  # for plane, polygon_set in building_element_plane2polygon_set.items():
+    # print(plane)
+    # for polygon in polygon_set.polygons: 
+      # print("outer:")
+      # print(list(map(lambda vertex: plane.to_3d(Point2(vertex[0], vertex[1])), polygon.outer_boundary().coords)))
+      # for hole in polygon.holes:
+        # print("hole:")
+        # print(list(map(lambda vertex: plane.to_3d(Point2(vertex[0], vertex[1])), hole.coords)))
+
+# print(puta)
 
 def translate_vertex(vertex, old_plane, new_plane):
   return new_plane.to_2d(old_plane.to_3d(Point2(vertex[0], vertex[1])))
@@ -83,35 +228,28 @@ plane2polygon_set = {}
 for building_element, building_element_plane2polygon_set in building_element2polygon_set.items():
   for plane, polygon_set in building_element_plane2polygon_set.items():
     for global_plane, global_polygon_set in plane2polygon_set.items():
-      is_opposite = global_plane == plane.opposite()
-      if global_plane == plane or is_opposite:
-        polygon_set = global_polygon_set.symmetric_difference(translate_polygon_set(polygon_set, plane, global_plane, is_opposite))
+      is_opposite = are_equal(global_plane, plane.opposite())
+      if are_equal(global_plane, plane) or is_opposite:
+        polygon_set = clipping(global_polygon_set, translate_polygon_set(polygon_set, plane, global_plane, is_opposite), "symmetric_difference")
         plane = global_plane
         break
         
     plane2polygon_set[plane] = polygon_set
-
-planes = list(plane2polygon_set.keys())
-print(planes[9])
-print(planes[10])
-print(planes[9] == planes[10])
-plane = planes[9].opposite()
-print(plane)
-print(planes[10])
-print(plane == planes[10])
-
-# count = 0
-# for plane, polygon_set in plane2polygon_set.items():
-  # print(count)
-  # print(plane)
-  # for polygon in polygon_set.polygons: 
-    # print("outer:")
-    # print(list(map(lambda vertex: plane.to_3d(Point2(vertex[0], vertex[1])), polygon.outer_boundary().coords)))
-    # for hole in polygon.holes:
-      # print("hole:")
-      # print(list(map(lambda vertex: plane.to_3d(Point2(vertex[0], vertex[1])), hole.coords)))
-  # count += 1
-  # print("")
+    
+count = 0
+for plane, polygon_setpolygon_set in plane2polygon_set.items():
+  print(count)
+  print(plane)
+  for polygon in polygon_set.polygons: 
+    print("outer:")
+    print(list(map(lambda vertex: plane.to_3d(Point2(vertex[0], vertex[1])), polygon.outer_boundary().coords)))
+    # print(polygon.outer_boundary().coords)
+    for hole in polygon.holes:
+      print("hole:")
+      print(list(map(lambda vertex: plane.to_3d(Point2(vertex[0], vertex[1])), hole.coords)))
+      # print(hole.coords)
+  print("")
+  count += 1
   
 print(puta)
 
