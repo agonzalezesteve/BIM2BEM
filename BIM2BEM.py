@@ -121,38 +121,38 @@ def print_polygon(obj):
     return area
     
 def clipping(subjects, clips, boolean_operation):  
-  # points = []
+  points = []
   
-  # append_points(subjects, points)
-  # append_points(clips, points)
+  append_points(subjects, points)
+  append_points(clips, points)
   
-  # row = []
-  # col = []
-  # data = []
-  # for id_i, point_i in enumerate(points):
-    # for id_j, point_j in enumerate(points[id_i+1:]):
-      # if skgeom.squared_distance(point_i, point_j) < 1e-6:
-        # row.append(id_i)
-        # col.append(id_j+id_i+1)
-        # data.append(1)
-  # n_components, labels = connected_components(csgraph=csr_matrix((np.array(data), (np.array(row), np.array(col))), shape=(len(points), len(points))), directed=False, return_labels=True)
+  row = []
+  col = []
+  data = []
+  for id_i, point_i in enumerate(points):
+    for id_j, point_j in enumerate(points[id_i+1:]):
+      if skgeom.squared_distance(point_i, point_j) < 1e-6:
+        row.append(id_i)
+        col.append(id_j+id_i+1)
+        data.append(1)
+  n_components, labels = connected_components(csgraph=csr_matrix((np.array(data), (np.array(row), np.array(col))), shape=(len(points), len(points))), directed=False, return_labels=True)
   
-  # new_points = []
-  # for x in range(0, n_components):
-    # indices = (np.where(labels == x))[0]
-    # if len(indices) == 1:
-      # new_points.append(points[indices[0]])
-    # else:
-      # old_points = list(map(lambda id: points[id], indices))
-      # new_points.append(skgeom.centroid(skgeom.Polygon(old_points)))
+  new_points = []
+  for x in range(0, n_components):
+    indices = (np.where(labels == x))[0]
+    if len(indices) == 1:
+      new_points.append(points[indices[0]])
+    else:
+      old_points = list(map(lambda id: points[id], indices))
+      new_points.append(skgeom.centroid(skgeom.Polygon(old_points)))
   
-  # subjects = replace_points(subjects, points)
-  # clips = replace_points(clips, points)
+  subjects = replace_points(subjects, points)
+  clips = replace_points(clips, points)
 
   method_to_call = getattr(subjects, boolean_operation)
   result = method_to_call(clips)
 
-  return result
+  # return result
   return remove_collinear_vertices(result)
   
 settings = ifcopenshell.geom.settings()
