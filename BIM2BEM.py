@@ -9,83 +9,15 @@ import numpy as np
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import connected_components
 
-def get_clipper(subjects, clips):  
-  clipper = pyclipper.Pyclipper()
-  
-  if not not subjects: clipper.AddPaths(subjects, pyclipper.PT_SUBJECT, True)
-  if not not clips: clipper.AddPaths(clips, pyclipper.PT_CLIP, True)
-  
-  return clipper
+# poly_tree = pyclipper.PyPolyNode()
+# poly_tree.Contour = [[40000, -0], [40000, 2500], [0, 2500]]
+# poly_tree.IsOpen = True
 
-SCALING_FACTOR = 1e4
+# clipper = pyclipper.Pyclipper()
 
-def polygon2paths(obj):
-  paths = []
-  
-  if isinstance(obj, skgeom._skgeom.Polygon):
-    for coord in obj.coords: paths.append([int(SCALING_FACTOR*coord[0]), int(SCALING_FACTOR*coord[1])])
+# clipper.AddPaths(pyclipper.PolyTreeToPaths(poly_tree), pyclipper.PT_SUBJECT, True)
 
-  if isinstance(obj, skgeom._skgeom.PolygonWithHoles):
-    paths.append(polygon2paths(obj.outer_boundary()))
-    for hole in obj.holes: paths.append(polygon2paths(hole))
-
-  if isinstance(obj, skgeom._skgeom.PolygonSet):
-    for polygon in obj.polygons: 
-      for path in polygon2paths(polygon):
-        paths.append(path)
-  
-  return paths
-  
-def countour2polygon(contour):
-  points = []
-  
-  for coords in contour: points.append(skgeom.Point2(coords[0]/SCALING_FACTOR, coords[1]/SCALING_FACTOR))
-    
-  return skgeom.Polygon(points)
-
-def polytree2polygon_set(polyTree, polygons):
-  if not polyTree.Contour:
-    for child in polyTree.Childs: polytree2polygon_set(child, polygons)
-  else:
-    outer_boundary = countour2polygon(polyTree.Contour)
-    holes, child_childs = [], []
-    for child in polyTree.Childs: 
-      holes.append(countour2polygon(child.Contour))
-      for child_child in child.Childs: child_childs.append(child_child)
-    
-    polygons.append(outer_boundary if not holes else skgeom.PolygonWithHoles(outer_boundary, holes))
-          
-    for child_child in child_childs: polytree2polygon_set(child_child, polygons)
-                
-  return True
-
-def execute_clipping(clipper, type):
-  polygons = []
-  
-  polytree2polygon_set(clipper.Execute2(type, pyclipper.PFT_EVENODD, pyclipper.PFT_EVENODD), polygons)
-  
-  for polygon in polygons:
-    print(polygon)
-  print("-------------")
-  
-  return skgeom.PolygonSet(polygons)
-
-def clipping(subjects, clips, boolean_operation):
-  clipper = get_clipper(polygon2paths(subjects if not isinstance(subjects, skgeom._skgeom.Polygon) else skgeom.PolygonSet([subjects])),
-                        polygon2paths(clips if not isinstance(clips, skgeom._skgeom.Polygon) else skgeom.PolygonSet([clips])))
-
-  if boolean_operation == "join": return execute_clipping(clipper, pyclipper.CT_UNION)
-  if boolean_operation == "intersection": return execute_clipping(clipper, pyclipper.CT_INTERSECTION)
-  if boolean_operation == "difference": return execute_clipping(clipper, pyclipper.CT_DIFFERENCE)
-  
-  union = execute_clipping(clipper, pyclipper.CT_UNION)
-  intersection = execute_clipping(clipper, pyclipper.CT_INTERSECTION)
-  
-  if not intersection: return union
-  
-  clipper = get_clipper(polygon2paths(union), polygon2paths(intersection))
-  
-  return execute_clipping(clipper, pyclipper.CT_DIFFERENCE)
+# print(puta)
 
 def are_equal(plane_a, plane_b):
   normal_a = plane_a.orthogonal_vector()
@@ -102,146 +34,67 @@ def are_equal(plane_a, plane_b):
   
   return True
 
+SCALING_FACTOR = 1e4
 
-def append_points(obj, points):
-  if isinstance(obj, skgeom._skgeom.Polygon):
-    for coord in obj.coords: points.append(skgeom.Point2(coord[0], coord[1]))
-      
-    return True
-    
-  if isinstance(obj, skgeom._skgeom.PolygonWithHoles):
-    append_points(obj.outer_boundary(), points)
-    for hole in obj.holes: append_points(hole, points)
-      
-    return True
-    
-  if isinstance(obj, skgeom._skgeom.PolygonSet):
-    for polygon in obj.polygons: append_points(polygon, points)
-    
-    return True
-
-def replace_points(obj, grid):
-  if isinstance(obj, skgeom._skgeom.Polygon):
-    points = []
-    
-    for coord in obj.coords:
-      point = skgeom.Point2(coord[0], coord[1])
-      points.append([x for x in grid if skgeom.squared_distance(point, x) < 1e-6][0])
-    
-    return skgeom.Polygon(points)
-    
-  if isinstance(obj, skgeom._skgeom.PolygonWithHoles):
-    outer_boundary = replace_points(obj.outer_boundary(), grid)
-    holes = list(map(lambda hole: replace_points(hole, grid), obj.holes))
-    
-    return skgeom.PolygonWithHoles(outer_boundary, holes)
-    
-  if isinstance(obj, skgeom._skgeom.PolygonSet):
-    polygons = list(map(lambda polygon: replace_points(polygon, grid), obj.polygons))
-    
-    return skgeom.PolygonSet(polygons)
-
-def remove_collinear_vertices(obj):
-  if isinstance(obj, skgeom._skgeom.Polygon):
-    points = []
-    
-    for coord in obj.coords:
-      point = skgeom.Point2(coord[0], coord[1])
-      if len(points) > 0 and skgeom.squared_distance(points[-1], point) < 1e-6: points.pop()
-      elif len(points) > 1 and skgeom.collinear(points[-2], points[-1], point): points.pop()
-      points.append(point)
-    
-    if len(points) > 0 and skgeom.squared_distance(points[-1], points[0]) < 1e-6: points.pop()
-    elif len(points) > 1 and skgeom.collinear(points[-2], points[-1], points[0]): points.pop()
-    
-    return skgeom.Polygon(points)
-    
-  if isinstance(obj, skgeom._skgeom.PolygonWithHoles):
-    outer_boundary = remove_collinear_vertices(obj.outer_boundary())
-    holes = list(map(lambda hole: remove_collinear_vertices(hole), obj.holes))
-    holes = [hole for hole in holes if not hole.area() > -1e-6]
-    
-    return skgeom.PolygonWithHoles(outer_boundary, holes)
-    
-  if isinstance(obj, skgeom._skgeom.PolygonSet):
-    polygons = list(map(lambda polygon: remove_collinear_vertices(polygon), obj.polygons))
-
-    return skgeom.PolygonSet(polygons)
-
-def get_area(obj):
-  if isinstance(obj, skgeom._skgeom.Polygon):
-    return obj.area()
-    
-  if isinstance(obj, skgeom._skgeom.PolygonWithHoles):
-    area = get_area(obj.outer_boundary())
-    for hole in obj.holes: area += get_area(hole)
-    
-    return area
-    
-  if isinstance(obj, skgeom._skgeom.PolygonSet):
-    area = 0.0
-    for polygon in obj.polygons: area += get_area(polygon)
-
-    return area
-    
-def print_polygon(obj):
-  if isinstance(obj, skgeom._skgeom.Polygon):
-    print(obj.coords)
-    
-  if isinstance(obj, skgeom._skgeom.PolygonWithHoles):
-    print("outer:")
-    print_polygon(obj.outer_boundary())
-    print("holes:")
-    for hole in obj.holes: print_polygon(hole)
-    
-  if isinstance(obj, skgeom._skgeom.PolygonSet):
-    for polygon in obj.polygons: print_polygon(polygon)
-
-    return area
-
-# def cgal2clipper(obj):
-
-# def clipping(subjects, clips, boolean_operation):  
-  # points = []
+def get_poly_tree(plane, points):
+  poly_tree = pyclipper.PyPolyNode()
   
-  # append_points(subjects, points)
-  # append_points(clips, points)
+  path = []
+  for point in points:
+    point = plane.to_2d(point)
+    path.append([int(SCALING_FACTOR * point.x()), int(SCALING_FACTOR * point.y())])
+  poly_tree.Contour = path
+  poly_tree.IsOpen = True
   
-  # row = []
-  # col = []
-  # data = []
-  # for id_i, point_i in enumerate(points):
-    # for id_j, point_j in enumerate(points[id_i+1:]):
-      # if skgeom.squared_distance(point_i, point_j) < 1e-6:
-        # row.append(id_i)
-        # col.append(id_j+id_i+1)
-        # data.append(1)
-  # n_components, labels = connected_components(csgraph=csr_matrix((np.array(data), (np.array(row), np.array(col))), shape=(len(points), len(points))), directed=False, return_labels=True)
-  
-  # new_points = []
-  # for x in range(0, n_components):
-    # indices = (np.where(labels == x))[0]
-    # if len(indices) == 1:
-      # new_points.append(points[indices[0]])
-    # else:
-      # old_points = list(map(lambda id: points[id], indices))
-      # new_points.append(skgeom.centroid(skgeom.Polygon(old_points)))
-  
-  # subjects = replace_points(subjects, points)
-  # clips = replace_points(clips, points)
+  return poly_tree
 
-  # method_to_call = getattr(subjects, boolean_operation)
-  # result = method_to_call(clips)
+def get_clipper(subject, clip):  
+  clipper = pyclipper.Pyclipper()
+  
+  print(subject)
+  
+  clipper.AddPaths(subject, pyclipper.PT_SUBJECT, True)
+  clipper.AddPaths(clip, pyclipper.PT_CLIP, True)
+  
+  return clipper
 
-  # return result
-  # return remove_collinear_vertices(result)
+def execute_clipping(clipper, type):
+  return clipper.Execute2(type, pyclipper.PFT_EVENODD, pyclipper.PFT_EVENODD)
+
+def clipping(subject, clip, boolean_operation):
+  if not subject.Contour and not subject.Childs:
+    if boolean_operation == "join": return clip
+    if boolean_operation == "intersection": return subject
+    if boolean_operation == "difference": return subject
+    return clip
+    
+  if not clip.Contour and not clip.Childs:
+    if boolean_operation == "join": return subject
+    if boolean_operation == "intersection": return clip
+    if boolean_operation == "difference": return subject
+    return subject
+  
+  clipper = get_clipper(pyclipper.PolyTreeToPaths(subject), pyclipper.PolyTreeToPaths(clip))
+
+  if boolean_operation == "join": return execute_clipping(clipper, pyclipper.CT_UNION)
+  if boolean_operation == "intersection": return execute_clipping(clipper, pyclipper.CT_INTERSECTION)
+  if boolean_operation == "difference": return execute_clipping(clipper, pyclipper.CT_DIFFERENCE)
+  
+  union = execute_clipping(clipper, pyclipper.CT_UNION)
+  intersection = execute_clipping(clipper, pyclipper.CT_INTERSECTION)
+  
+  if not intersection: return union
+  
+  clipper = get_clipper(pyclipper.PolyTreeToPaths(union), pyclipper.PolyTreeToPaths(intersection))
+  
+  return execute_clipping(clipper, pyclipper.CT_DIFFERENCE)
   
 settings = ifcopenshell.geom.settings()
 settings.set(settings.USE_WORLD_COORDS, True)
 
 file = ifcopenshell.open('./test.ifc')
 
-building_element2polygon_set = {}
+building_element2poly_treee = {}
 for building_element in file.by_type('IfcBuildingElement'):
   if not (building_element.is_a('IfcWall') or building_element.is_a('IfcSlab')): continue
   
@@ -250,7 +103,7 @@ for building_element in file.by_type('IfcBuildingElement'):
   vertices = geo.verts
   faces = geo.faces
 
-  plane2polygon_sets = {}
+  plane2poly_trees = {}
   for f in range(0, len(faces), 3):
     points = []
     for v in faces[f : f + 3]:
@@ -258,33 +111,28 @@ for building_element in file.by_type('IfcBuildingElement'):
     plane = skgeom.Plane3(points[0], points[1], points[2])
 
     is_opposite = False
-    polygon_sets = [skgeom.PolygonSet(), skgeom.PolygonSet()]
-    for building_element_plane, building_element_polygon_sets in plane2polygon_sets.items():
+    poly_trees = [pyclipper.PyPolyNode(), pyclipper.PyPolyNode()]
+    for building_element_plane, building_element_poly_trees in plane2poly_trees.items():
       is_opposite = are_equal(building_element_plane, plane.opposite())
       if is_opposite: points.reverse()
       if are_equal(building_element_plane, plane) or is_opposite:
         plane = building_element_plane
-        polygon_sets = building_element_polygon_sets
+        poly_trees = building_element_poly_trees
         break
     index = (0,1)[is_opposite]
-    polygon_sets[index] = clipping(polygon_sets[index], skgeom.Polygon(list(map(lambda point: plane.to_2d(point), points))), "join")
+    poly_trees[index] = clipping(poly_trees[index], get_poly_tree(plane, points), "join")
 
-    plane2polygon_sets[plane] = polygon_sets
+    plane2poly_trees[plane] = poly_trees
   
-  building_element2polygon_set[building_element] = {plane: clipping(polygon_sets[0], polygon_sets[1], "symmetric_difference") for plane, polygon_sets in plane2polygon_sets.items()}
+  building_element2poly_treee[building_element] = {plane: clipping(poly_trees[0], poly_trees[1], "symmetric_difference") for plane, poly_trees in plane2poly_trees.items()}
 
-# for building_element, building_element_plane2polygon_set in building_element2polygon_set.items():
-  # print(building_element)
-  # for plane, polygon_set in building_element_plane2polygon_set.items():
-    # print(plane)
-    # for polygon in polygon_set.polygons: 
-      # print("outer:")
-      # print(list(map(lambda vertex: plane.to_3d(Point2(vertex[0], vertex[1])), polygon.outer_boundary().coords)))
-      # for hole in polygon.holes:
-        # print("hole:")
-        # print(list(map(lambda vertex: plane.to_3d(Point2(vertex[0], vertex[1])), hole.coords)))
+for building_element, building_element_plane2poly_tree in building_element2poly_treee.items():
+  print(building_element)
+  for plane, poly_tree in building_element_plane2poly_tree.items():
+    print(plane)
+    pyclipper.PolyTreeToPaths(poly_tree)
 
-# print(puta)
+print(puta)
 
 def translate_vertex(vertex, old_plane, new_plane):
   return new_plane.to_2d(old_plane.to_3d(Point2(vertex[0], vertex[1])))
@@ -306,7 +154,7 @@ def translate_polygon_set(polygon_set, old_plane, new_plane, is_opposite):
   return skgeom.PolygonSet(new_polygons)
       
 plane2polygon_set = {}
-for building_element, building_element_plane2polygon_set in building_element2polygon_set.items():
+for building_element, building_element_plane2polygon_set in building_element2poly_treee.items():
   for plane, polygon_set in building_element_plane2polygon_set.items():
     for global_plane, global_polygon_set in plane2polygon_set.items():
       is_opposite = are_equal(global_plane, plane.opposite())
