@@ -9,16 +9,6 @@ import numpy as np
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import connected_components
 
-# poly_tree = pyclipper.PyPolyNode()
-# poly_tree.Contour = [[40000, -0], [40000, 2500], [0, 2500]]
-# poly_tree.IsOpen = True
-
-# clipper = pyclipper.Pyclipper()
-
-# clipper.AddPaths(pyclipper.PolyTreeToPaths(poly_tree), pyclipper.PT_SUBJECT, True)
-
-# print(puta)
-
 def are_equal(plane_a, plane_b):
   normal_a = plane_a.orthogonal_vector()
   normal_b = plane_b.orthogonal_vector()
@@ -26,12 +16,10 @@ def are_equal(plane_a, plane_b):
   length_a = math.sqrt(normal_a.squared_length())
   length_b = math.sqrt(normal_b.squared_length())
   
-  aux = normal_a * normal_b / length_a / length_b - 1
-  if aux > 1e-6 or aux < -1e-6: return False
+  if not abs(float(normal_a * normal_b / length_a / length_b - 1)) < 1e-6: return False
   
-  aux = plane_a.d() / length_a - plane_b.d() / length_b
-  if aux > 1e-6 or aux < -1e-6: return False
-  
+  if not abs(float(plane_a.d() / length_a - plane_b.d() / length_b)) < 1e-6: return False
+
   return True
 
 SCALING_FACTOR = 1e4
@@ -39,20 +27,15 @@ SCALING_FACTOR = 1e4
 def get_poly_tree(plane, points):
   poly_tree = pyclipper.PyPolyNode()
   
-  path = []
-  for point in points:
-    point = plane.to_2d(point)
-    path.append([int(SCALING_FACTOR * point.x()), int(SCALING_FACTOR * point.y())])
-  poly_tree.Contour = path
+  polygon2 = skgeom.Polygon(list(map(lambda point: plane.to_2d(point), points)))
+  poly_tree.Contour = list(map(lambda coord: [int(SCALING_FACTOR * coord[0]), int(SCALING_FACTOR * coord[1])] , polygon2.coords))
   poly_tree.IsOpen = True
   
   return poly_tree
 
 def get_clipper(subject, clip):  
   clipper = pyclipper.Pyclipper()
-  
-  print(subject)
-  
+    
   clipper.AddPaths(subject, pyclipper.PT_SUBJECT, True)
   clipper.AddPaths(clip, pyclipper.PT_CLIP, True)
   
@@ -67,7 +50,7 @@ def clipping(subject, clip, boolean_operation):
     if boolean_operation == "intersection": return subject
     if boolean_operation == "difference": return subject
     return clip
-    
+
   if not clip.Contour and not clip.Childs:
     if boolean_operation == "join": return subject
     if boolean_operation == "intersection": return clip
@@ -83,7 +66,8 @@ def clipping(subject, clip, boolean_operation):
   union = execute_clipping(clipper, pyclipper.CT_UNION)
   intersection = execute_clipping(clipper, pyclipper.CT_INTERSECTION)
   
-  if not intersection: return union
+  if not intersection.Contour and not intersection.Childs:
+    return union
   
   clipper = get_clipper(pyclipper.PolyTreeToPaths(union), pyclipper.PolyTreeToPaths(intersection))
   
@@ -126,64 +110,138 @@ for building_element in file.by_type('IfcBuildingElement'):
   
   building_element2poly_treee[building_element] = {plane: clipping(poly_trees[0], poly_trees[1], "symmetric_difference") for plane, poly_trees in plane2poly_trees.items()}
 
-for building_element, building_element_plane2poly_tree in building_element2poly_treee.items():
-  print(building_element)
-  for plane, poly_tree in building_element_plane2poly_tree.items():
-    print(plane)
-    pyclipper.PolyTreeToPaths(poly_tree)
+# for building_element, building_element_plane2poly_tree in building_element2poly_treee.items():
+  # print(building_element)
+  # for plane, poly_tree in building_element_plane2poly_tree.items():
+    # print(plane)
+    # for polygon2 in pyclipper.PolyTreeToPaths(poly_tree):
+      # print(list(map(lambda coord: plane.to_3d(skgeom.Point2(coord[0] / SCALING_FACTOR, coord[1] / SCALING_FACTOR)), polygon2)))
 
-print(puta)
+# print(puta)
 
-def translate_vertex(vertex, old_plane, new_plane):
-  return new_plane.to_2d(old_plane.to_3d(Point2(vertex[0], vertex[1])))
+def translate_poly_tree(poly_tree, parent, old_plane, new_plane, is_opposite):
+  points = list(map(lambda coord: old_plane.to_3d(skgeom.Point2(coord[0] / SCALING_FACTOR, coord[1] / SCALING_FACTOR)), poly_tree.Contour))
+  if is_opposite: points.reverse()
+  new_poly_tree = get_poly_tree(new_plane, points)
+  if parent: new_poly_tree.Parent = parent
   
-def translate_polygon_set(polygon_set, old_plane, new_plane, is_opposite):
-  new_polygons = []
+  new_poly_tree.IsHole = poly_tree.IsHole
+  new_poly_tree.IsOpen = poly_tree.IsOpen
   
-  for polygon in polygon_set.polygons:
-    points = list(map(lambda vertex: translate_vertex(vertex, old_plane, new_plane), polygon.outer_boundary().coords))
-    if is_opposite: points.reverse()
-    outer = skgeom.Polygon(points)
-    holes = []
-    for hole in polygon.holes:
-      points = list(map(lambda vertex: translate_vertex(vertex, old_plane, new_plane), hole.coords))
-      if is_opposite: points.reverse()
-      holes.append(skgeom.Polygon(points))
-    new_polygons.append(skgeom.PolygonWithHoles(outer, holes))
+  depths = [0]
+  for child in poly_tree.Childs:
+    new_child = translate_poly_tree(child, new_poly_tree, old_plane, new_plane, is_opposite)
+    new_poly_tree.Childs.append(new_child)
+    depths.append(new_child.depth + 1)
+  new_poly_tree.depth = max(depths)
   
-  return skgeom.PolygonSet(new_polygons)
+  return new_poly_tree
       
-plane2polygon_set = {}
-for building_element, building_element_plane2polygon_set in building_element2poly_treee.items():
-  for plane, polygon_set in building_element_plane2polygon_set.items():
-    for global_plane, global_polygon_set in plane2polygon_set.items():
+plane2poly_tree = {}
+for building_element, building_element_plane2poly_tree in building_element2poly_treee.items():
+  for plane, poly_tree in building_element_plane2poly_tree.items():
+    for global_plane, global_poly_tree in plane2poly_tree.items():
       is_opposite = are_equal(global_plane, plane.opposite())
       if are_equal(global_plane, plane) or is_opposite:
-        polygon_set = clipping(global_polygon_set, translate_polygon_set(polygon_set, plane, global_plane, is_opposite), "symmetric_difference")
+        aux = translate_poly_tree(poly_tree, None, plane, global_plane, is_opposite)
+        poly_tree = clipping(global_poly_tree, translate_poly_tree(poly_tree, None, plane, global_plane, is_opposite), "symmetric_difference")
         plane = global_plane
         break
         
-    plane2polygon_set[plane] = polygon_set
+    plane2poly_tree[plane] = poly_tree
     
-count = 0
-for plane, polygon_setpolygon_set in plane2polygon_set.items():
-  print(count)
-  print(plane)
-  for polygon in polygon_set.polygons: 
-    print("outer:")
-    print(list(map(lambda vertex: plane.to_3d(Point2(vertex[0], vertex[1])), polygon.outer_boundary().coords)))
-    # print(polygon.outer_boundary().coords)
-    for hole in polygon.holes:
-      print("hole:")
-      print(list(map(lambda vertex: plane.to_3d(Point2(vertex[0], vertex[1])), hole.coords)))
-      # print(hole.coords)
-  print("")
-  count += 1
-  
-print(puta)
+# count = 0
+# for plane, poly_tree in plane2poly_tree.items():
+  # print(count)
+  # print(plane)
+  # for polygon2 in pyclipper.PolyTreeToPaths(poly_tree):
+    # print(list(map(lambda coord: plane.to_3d(skgeom.Point2(coord[0] / SCALING_FACTOR, coord[1] / SCALING_FACTOR)), polygon2)))
+  # print("")
+  # count += 1
 
-def cross_product(u, v):
-  return Vector3(Point3(u.z()*v.y(), u.x()*v.z(), u.y()*v.x()), Point3(u.y()*v.z(), u.z()*v.x(), u.x()*v.y()))
+def path2polygon3(path, plane):
+  return list(map(lambda coord: plane.to_3d(skgeom.Point2(coord[0] / SCALING_FACTOR, coord[1] / SCALING_FACTOR)), path))
+
+def add_polygon3s(poly_tree, plane, firsts):
+  contour = poly_tree.Contour
+  if not contour:
+    for child in poly_tree.Childs: add_polygon3s(child, plane, firsts)
+  else:
+    outer_boundary = path2polygon3(contour, plane)
+    holes = list(map(lambda hole: path2polygon3(hole.Contour, plane), poly_tree.Childs))
+    
+    firsts.append([plane, outer_boundary, holes])
+    
+    for hole in poly_tree.Childs: 
+      for child in hole.Childs: add_polygon3s(child, plane, firsts)
+
+firsts = []
+for plane, poly_tree in plane2poly_tree.items():
+  add_polygon3s(poly_tree, plane, firsts)
+  
+for polygon3 in firsts:
+  print(polygon3)
+  
+def has_on_plane(plane, point):
+  return abs(float(plane.orthogonal_vector() * (point - skgeom.Point3(0, 0, 0)) + plane.d())) < 1e-3
+
+def get_segment3s(paths, plane):
+  # print(paths)
+  segment3s = []
+  
+  for path in paths:
+    prev_point3 = path[-1]
+    has_prev_point3 = has_on_plane(plane, prev_point3)
+    for point3 in path:
+      if has_on_plane(plane, point3):
+        if has_prev_point3: segment3s.append(skgeom.Segment3(point3, prev_point3))
+        has_prev_point3 = True
+      else:
+        has_prev_point3 = False
+      prev_point3 = point3
+  
+  return segment3s
+
+def polygons3_do_intersect(polygon3_i, polygon3_j):      
+  segment3s_i = get_segment3s(([polygon3_i[1]] + polygon3_i[2]), polygon3_j[0])
+  if not segment3s_i:
+    # print("a")
+    return False
+  plane_i = polygon3_i[0]
+  segment3s_j = get_segment3s(([polygon3_j[1]] + polygon3_j[2]), plane_i)
+  if not segment3s_j:
+    # print("b")
+    return False
+  
+  for segment3_i in segment3s_i:
+    segment2_i = skgeom.Segment2(plane_i.to_2d(segment3_i.source()), plane_i.to_2d(segment3_i.target()))
+    for segment3_j in segment3s_j:
+      segment2_j = skgeom.Segment2(plane_i.to_2d(segment3_j.source()), plane_i.to_2d(segment3_j.target()))
+      
+      if skgeom.do_intersect(segment2_i, segment2_j):
+        # print("c")
+        return True
+  
+  # print("d")
+  return False
+
+row = []
+col = []
+data = []
+for id_polygon_i, polygon3_i in enumerate(firsts):
+  # print("id_polygon_i: " + str(id_polygon_i))
+  for id_polygon_j, polygon3_j in enumerate(firsts[id_polygon_i+1:]):
+    # print("id_polygon_j: " + str(id_polygon_j+id_polygon_i+1))
+    if not polygons3_do_intersect(polygon3_i, polygon3_j): continue
+    
+    print(str(id_polygon_i) + ": " + str(id_polygon_j+id_polygon_i+1))
+    row.append(id_polygon_i)
+    col.append(id_polygon_j+id_polygon_i+1)
+    data.append(1)
+    
+n_components, labels = connected_components(csgraph=csr_matrix((np.array(data), (np.array(row), np.array(col))), shape=(len(firsts), len(firsts))), directed=False, return_labels=True)
+
+print(puta)
 
 def do_intersect(polygon_i, polygon_j):
   for id_vertex_i, p2 in enumerate(polygon_i):
