@@ -183,7 +183,10 @@ for polygon3 in firsts:
   print(polygon3)
   
 def has_on_plane(plane, point):
-  return abs(float(plane.orthogonal_vector() * (point - skgeom.Point3(0, 0, 0)) + plane.d())) < 1e-3
+  normal = plane.orthogonal_vector()
+  distance = (normal * (point - skgeom.Point3(0, 0, 0)) + plane.d()) / math.sqrt(normal.squared_length())
+  
+  return abs(float(distance)) < 1e-3
 
 def get_segment3s(paths, plane):
   # print(paths)
@@ -202,46 +205,51 @@ def get_segment3s(paths, plane):
   
   return segment3s
 
+def segment2_is_vertical(segment2):
+  u = segment2.to_vector()
+  v = skgeom.Vector2(0, 1)
+  
+  return abs(float(u.x()*v.y()-u.y()*v.x())) < 1e-3
+  
 def polygons3_do_intersect(polygon3_i, polygon3_j):      
   segment3s_i = get_segment3s(([polygon3_i[1]] + polygon3_i[2]), polygon3_j[0])
-  if not segment3s_i:
-    # print("a")
-    return False
+  if not segment3s_i: return False
   plane_i = polygon3_i[0]
   segment3s_j = get_segment3s(([polygon3_j[1]] + polygon3_j[2]), plane_i)
-  if not segment3s_j:
-    # print("b")
-    return False
+  if not segment3s_j: return False
   
   for segment3_i in segment3s_i:
     segment2_i = skgeom.Segment2(plane_i.to_2d(segment3_i.source()), plane_i.to_2d(segment3_i.target()))
+    is_vertical = segment2_is_vertical(segment2_i)
+    
+    point2_min_i, point2_max_i = segment2_i.min(), segment2_i.max()
+    min_i = point2_min_i.x() if not is_vertical else point2_min_i.y()
+    max_i = point2_max_i.x() if not is_vertical else point2_max_i.y()
     for segment3_j in segment3s_j:
       segment2_j = skgeom.Segment2(plane_i.to_2d(segment3_j.source()), plane_i.to_2d(segment3_j.target()))
-      
-      if skgeom.do_intersect(segment2_i, segment2_j):
-        # print("c")
-        return True
+      point2_min_j, point2_max_j = segment2_j.min(), segment2_j.max()
+      min_j = point2_min_j.x() if not is_vertical else point2_min_j.y()
+      max_j = point2_max_j.x() if not is_vertical else point2_max_j.y()
+
+      if max_j > min_i and max_i > min_j: return True
   
-  # print("d")
   return False
+
 
 row = []
 col = []
 data = []
 for id_polygon_i, polygon3_i in enumerate(firsts):
-  # print("id_polygon_i: " + str(id_polygon_i))
   for id_polygon_j, polygon3_j in enumerate(firsts[id_polygon_i+1:]):
-    # print("id_polygon_j: " + str(id_polygon_j+id_polygon_i+1))
     if not polygons3_do_intersect(polygon3_i, polygon3_j): continue
     
-    print(str(id_polygon_i) + ": " + str(id_polygon_j+id_polygon_i+1))
     row.append(id_polygon_i)
     col.append(id_polygon_j+id_polygon_i+1)
     data.append(1)
     
 n_components, labels = connected_components(csgraph=csr_matrix((np.array(data), (np.array(row), np.array(col))), shape=(len(firsts), len(firsts))), directed=False, return_labels=True)
 
-print(puta)
+print(labels)
 
 def do_intersect(polygon_i, polygon_j):
   for id_vertex_i, p2 in enumerate(polygon_i):
