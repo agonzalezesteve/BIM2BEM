@@ -117,7 +117,7 @@ for building_element in file.by_type('IfcBuildingElement'):
     # for polygon2 in pyclipper.PolyTreeToPaths(poly_tree):
       # print(list(map(lambda coord: plane.to_3d(skgeom.Point2(coord[0] / SCALING_FACTOR, coord[1] / SCALING_FACTOR)), polygon2)))
 
-# print(puta)
+# print(hola)
 
 def translate_poly_tree(poly_tree, parent, old_plane, new_plane, is_opposite):
   points = list(map(lambda coord: old_plane.to_3d(skgeom.Point2(coord[0] / SCALING_FACTOR, coord[1] / SCALING_FACTOR)), poly_tree.Contour))
@@ -159,6 +159,8 @@ for building_element, building_element_plane2poly_tree in building_element2poly_
   # print("")
   # count += 1
 
+# print(hola)
+
 def path2polygon3(path, plane):
   return list(map(lambda coord: plane.to_3d(skgeom.Point2(coord[0] / SCALING_FACTOR, coord[1] / SCALING_FACTOR)), path))
 
@@ -189,7 +191,6 @@ def has_on_plane(plane, point):
   return abs(float(distance)) < 1e-3
 
 def get_segment3s(paths, plane):
-  # print(paths)
   segment3s = []
   
   for path in paths:
@@ -235,7 +236,6 @@ def polygons3_do_intersect(polygon3_i, polygon3_j):
   
   return False
 
-
 row = []
 col = []
 data = []
@@ -249,107 +249,4 @@ for id_polygon_i, polygon3_i in enumerate(firsts):
     
 n_components, labels = connected_components(csgraph=csr_matrix((np.array(data), (np.array(row), np.array(col))), shape=(len(firsts), len(firsts))), directed=False, return_labels=True)
 
-print(labels)
-
-def do_intersect(polygon_i, polygon_j):
-  for id_vertex_i, p2 in enumerate(polygon_i):
-    p1 = polygon_i[id_vertex_i-1]
-    p12 = p2 - p1
-    for id_vertex_j, p4 in enumerate(polygon_j):
-      p3 = polygon_j[id_vertex_j-1]
-      p34 = p4 - p3
-
-      if cross_product(p12, p34).squared_length() > 1e-6: continue
-
-      p13 = p3 - p1
-
-      if cross_product(p12, p13).squared_length() > 1e-6: continue
-
-      p14 = p4 - p1
-
-      k2 = p12 * p12
-      k3 = p12 * p13
-      k4 = p12 * p14
-
-      intersection = [
-        [0.0, p14.squared_length(), p12.squared_length()],
-        [p13.squared_length(), p34.squared_length(), (p3 - p2).squared_length()],
-        [p12.squared_length(), (p4 - p2).squared_length(), 0.0]
-      ]
-
-      if k3 < 1e-6:
-        intersection_i = 0
-      elif k3 < k2:
-        intersection_i = 1
-      else:
-        intersection_i = 2
-
-      if k4 < 1e-6:
-        intersection_j = 0
-      elif k4 < k2:
-        intersection_j = 1
-      else:
-        intersection_j = 2
-
-      if intersection[intersection_i][intersection_j] > 1e-6: return True
-  return False
-
-    # polygons.append(points)
-
-  # row = []
-  # col = []
-  # data = []
-  # for id_polygon_i, polygon_i in enumerate(polygons):
-    # plane_i = skgeom.Plane3(polygon_i[0], polygon_i[1], polygon_i[2])
-    # for id_polygon_j, polygon_j in enumerate(polygons[id_polygon_i+1:]):
-      # plane_j = skgeom.Plane3(polygon_j[0], polygon_j[1], polygon_j[2])
-      # if plane_i == plane_j and do_intersect(polygon_i, polygon_j):
-        # row.append(id_polygon_i)
-        # col.append(id_polygon_j+id_polygon_i+1)
-        # data.append(1)
-  # n_components, labels = connected_components(csgraph=csr_matrix((np.array(data), (np.array(row), np.array(col))), shape=(len(polygons), len(polygons))), directed=False, return_labels=True)
-  # print(labels)
-
-firsts = []
-id, aux = 0, 0
-for plane, polygons in building_element2polygons[element].items():
-  solution = skgeom.PolygonSet()
-  for polygon in polygons:
-    if id == aux:
-      print("a:")
-      for a in solution.polygons:
-        print(a)
-      print("b:")
-      print(polygon)
-    solution = solution.symmetric_difference(polygon)
-    if id == aux:
-      print("c:")
-      for c in solution.polygons:
-        print(c)
-      print(puta)
-    id += 1
-
-  for polygon in solution.polygons:
-    firsts.append(list(map(lambda vertex: plane.to_3d(Point2(vertex[0], vertex[1])), polygon.outer_boundary().coords)))
-
-print(puta)
-
-for id_polygon_i, polygon_i in enumerate(firsts):
-  print(id_polygon_i)
-  for vertex in polygon_i:
-    print(vertex)
-  print("")
-
-row = []
-col = []
-data = []
-for id_polygon_i, polygon_i in enumerate(firsts):
-  for id_polygon_j, polygon_j in enumerate(firsts[id_polygon_i+1:]):
-    if do_intersect(polygon_i, polygon_j):
-      print(str(id_polygon_i) + ": " + str(id_polygon_j+id_polygon_i+1))
-      row.append(id_polygon_i)
-      col.append(id_polygon_j+id_polygon_i+1)
-      data.append(1)
-
-n_components, labels = connected_components(csgraph=csr_matrix((np.array(data), (np.array(row), np.array(col))), shape=(len(firsts), len(firsts))), directed=False, return_labels=True)
-# print(labels)
+# https://github.com/IfcOpenShell/IfcOpenShell/blob/fcc2b9ee13e0505c617b306fe5e29890855ced5e/src/ifcblenderexport/blenderbim/bim/export_ifc.py#L3357
