@@ -9,16 +9,21 @@ import numpy as np
 from scipy.sparse import csr_matrix
 from scipy.sparse.csgraph import connected_components
 
+def get_unit_normal_plane(points):
+  plane = skgeom.Plane3(points[0], points[1], points[2])
+  
+  normal = plane.orthogonal_vector()
+  length = math.sqrt(normal.squared_length())
+  
+  return skgeom.Plane3(points[0], normal / length)
+
 def are_equal(plane_a, plane_b):
   normal_a = plane_a.orthogonal_vector()
   normal_b = plane_b.orthogonal_vector()
   
-  length_a = math.sqrt(normal_a.squared_length())
-  length_b = math.sqrt(normal_b.squared_length())
+  if not abs(float(normal_a * normal_b - 1)) < 1e-6: return False
   
-  if not abs(float(normal_a * normal_b / length_a / length_b - 1)) < 1e-6: return False
-  
-  if not abs(float(plane_a.d() / length_a - plane_b.d() / length_b)) < 1e-6: return False
+  if not abs(float(plane_a.d() - plane_b.d())) < 1e-6: return False
 
   return True
 
@@ -78,7 +83,8 @@ settings.set(settings.USE_WORLD_COORDS, True)
 
 file = ifcopenshell.open('./test.ifc')
 
-building_element2poly_treee = {}
+building_element2faces = {}
+building_element2poly_trees = {}
 for building_element in file.by_type('IfcBuildingElement'):
   if not (building_element.is_a('IfcWall') or building_element.is_a('IfcSlab')): continue
   
@@ -92,13 +98,12 @@ for building_element in file.by_type('IfcBuildingElement'):
     points = []
     for v in faces[f : f + 3]:
       points.append(skgeom.Point3(vertices[3*v], vertices[3*v+1], vertices[3*v+2]))
-    plane = skgeom.Plane3(points[0], points[1], points[2])
+    plane = get_unit_normal_plane(points)
 
     is_opposite = False
     poly_trees = [pyclipper.PyPolyNode(), pyclipper.PyPolyNode()]
     for building_element_plane, building_element_poly_trees in plane2poly_trees.items():
       is_opposite = are_equal(building_element_plane, plane.opposite())
-      if is_opposite: points.reverse()
       if are_equal(building_element_plane, plane) or is_opposite:
         plane = building_element_plane
         poly_trees = building_element_poly_trees
@@ -108,9 +113,10 @@ for building_element in file.by_type('IfcBuildingElement'):
 
     plane2poly_trees[plane] = poly_trees
   
-  building_element2poly_treee[building_element] = {plane: clipping(poly_trees[0], poly_trees[1], "symmetric_difference") for plane, poly_trees in plane2poly_trees.items()}
+  building_element2faces[building_element] = plane2poly_trees
+  building_element2poly_trees[building_element] = {plane: clipping(poly_trees[0], poly_trees[1], "symmetric_difference") for plane, poly_trees in plane2poly_trees.items()}
 
-# for building_element, building_element_plane2poly_tree in building_element2poly_treee.items():
+# for building_element, building_element_plane2poly_tree in building_element2poly_trees.items():
   # print(building_element)
   # for plane, poly_tree in building_element_plane2poly_tree.items():
     # print(plane)
@@ -118,48 +124,29 @@ for building_element in file.by_type('IfcBuildingElement'):
       # print(list(map(lambda coord: plane.to_3d(skgeom.Point2(coord[0] / SCALING_FACTOR, coord[1] / SCALING_FACTOR)), polygon2)))
 
 # print(hola)
-
-def translate_poly_tree(poly_tree, parent, old_plane, new_plane, is_opposite):
-  points = list(map(lambda coord: old_plane.to_3d(skgeom.Point2(coord[0] / SCALING_FACTOR, coord[1] / SCALING_FACTOR)), poly_tree.Contour))
-  if is_opposite: points.reverse()
-  new_poly_tree = get_poly_tree(new_plane, points)
-  if parent: new_poly_tree.Parent = parent
-  
-  new_poly_tree.IsHole = poly_tree.IsHole
-  new_poly_tree.IsOpen = poly_tree.IsOpen
-  
-  depths = [0]
-  for child in poly_tree.Childs:
-    new_child = translate_poly_tree(child, new_poly_tree, old_plane, new_plane, is_opposite)
-    new_poly_tree.Childs.append(new_child)
-    depths.append(new_child.depth + 1)
-  new_poly_tree.depth = max(depths)
-  
-  return new_poly_tree
       
 plane2poly_tree = {}
-for building_element, building_element_plane2poly_tree in building_element2poly_treee.items():
+for building_element, building_element_plane2poly_tree in building_element2poly_trees.items():
   for plane, poly_tree in building_element_plane2poly_tree.items():
     for global_plane, global_poly_tree in plane2poly_tree.items():
       is_opposite = are_equal(global_plane, plane.opposite())
       if are_equal(global_plane, plane) or is_opposite:
-        aux = translate_poly_tree(poly_tree, None, plane, global_plane, is_opposite)
-        poly_tree = clipping(global_poly_tree, translate_poly_tree(poly_tree, None, plane, global_plane, is_opposite), "symmetric_difference")
+        poly_tree = clipping(global_poly_tree, poly_tree, "symmetric_difference")
         plane = global_plane
         break
         
     plane2poly_tree[plane] = poly_tree
     
-# count = 0
-# for plane, poly_tree in plane2poly_tree.items():
-  # print(count)
-  # print(plane)
-  # for polygon2 in pyclipper.PolyTreeToPaths(poly_tree):
-    # print(list(map(lambda coord: plane.to_3d(skgeom.Point2(coord[0] / SCALING_FACTOR, coord[1] / SCALING_FACTOR)), polygon2)))
-  # print("")
-  # count += 1
+count = 0
+for plane, poly_tree in plane2poly_tree.items():
+  print(count)
+  print(plane)
+  for polygon2 in pyclipper.PolyTreeToPaths(poly_tree):
+    print(list(map(lambda coord: plane.to_3d(skgeom.Point2(coord[0] / SCALING_FACTOR, coord[1] / SCALING_FACTOR)), polygon2)))
+  print("")
+  count += 1
 
-# print(hola)
+print(hola)
 
 def path2polygon3(path, plane):
   return list(map(lambda coord: plane.to_3d(skgeom.Point2(coord[0] / SCALING_FACTOR, coord[1] / SCALING_FACTOR)), path))
@@ -181,12 +168,12 @@ firsts = []
 for plane, poly_tree in plane2poly_tree.items():
   add_polygon3s(poly_tree, plane, firsts)
   
-for polygon3 in firsts:
-  print(polygon3)
+# for polygon3 in firsts:
+  # print(polygon3)
   
 def has_on_plane(plane, point):
   normal = plane.orthogonal_vector()
-  distance = (normal * (point - skgeom.Point3(0, 0, 0)) + plane.d()) / math.sqrt(normal.squared_length())
+  distance = normal * (point - skgeom.Point3(0, 0, 0)) + plane.d()
   
   return abs(float(distance)) < 1e-3
 
@@ -206,11 +193,8 @@ def get_segment3s(paths, plane):
   
   return segment3s
 
-def segment2_is_vertical(segment2):
-  u = segment2.to_vector()
-  v = skgeom.Vector2(0, 1)
-  
-  return abs(float(u.x()*v.y()-u.y()*v.x())) < 1e-3
+def inner_product(vector2_i, vector2_j):
+  return vector2_i.x() * vector2_j.x() + vector2_i.y() * vector2_j.y()
   
 def polygons3_do_intersect(polygon3_i, polygon3_j):      
   segment3s_i = get_segment3s(([polygon3_i[1]] + polygon3_i[2]), polygon3_j[0])
@@ -221,18 +205,19 @@ def polygons3_do_intersect(polygon3_i, polygon3_j):
   
   for segment3_i in segment3s_i:
     segment2_i = skgeom.Segment2(plane_i.to_2d(segment3_i.source()), plane_i.to_2d(segment3_i.target()))
-    is_vertical = segment2_is_vertical(segment2_i)
     
-    point2_min_i, point2_max_i = segment2_i.min(), segment2_i.max()
-    min_i = point2_min_i.x() if not is_vertical else point2_min_i.y()
-    max_i = point2_max_i.x() if not is_vertical else point2_max_i.y()
+    point2_i = segment2_i.min()
+    vector2_i = segment2_i.to_vector()
+    vector2_i /= vector2_i.squared_length()
+    
+    max_i = inner_product(vector2_i, segment2_i.max() - point2_i)
     for segment3_j in segment3s_j:
       segment2_j = skgeom.Segment2(plane_i.to_2d(segment3_j.source()), plane_i.to_2d(segment3_j.target()))
-      point2_min_j, point2_max_j = segment2_j.min(), segment2_j.max()
-      min_j = point2_min_j.x() if not is_vertical else point2_min_j.y()
-      max_j = point2_max_j.x() if not is_vertical else point2_max_j.y()
 
-      if max_j > min_i and max_i > min_j: return True
+      min_j = inner_product(vector2_i, segment2_j.min() - point2_i)
+      max_j = inner_product(vector2_i, segment2_j.max() - point2_i)
+
+      if max_j > 0.0 and max_i > min_j: return True
   
   return False
 
@@ -248,6 +233,31 @@ for id_polygon_i, polygon3_i in enumerate(firsts):
     data.append(1)
     
 n_components, labels = connected_components(csgraph=csr_matrix((np.array(data), (np.array(row), np.array(col))), shape=(len(firsts), len(firsts))), directed=False, return_labels=True)
+
+print(n_components)
+print(labels)
+
+# for i in range(0, n_components):
+  # for id, first in enumerate(firsts):
+    # if not labels[id] == i: continue
+    
+    # first_plane = first[0]
+    # first_poly_tree = get_poly_tree(first_plane, first[1])
+    # first_poly_tree.depth = 1
+    
+    # for hole in first[2]:
+      # hole_poly_tree = get_poly_tree(first_plane, hole)
+      
+      # hole_poly_tree.Parent = first_poly_tree
+      # hole_poly_tree.IsHole = True
+      # hole_poly_tree.depth = 1
+      # first_poly_tree.depth = 2
+        
+    # for building_element, building_element_plane2poly_tree in building_element2poly_treee.items():
+      # for plane, building_poly_tree in building_element_plane2poly_tree.items():
+        # is_opposite = are_equal(first_plane, plane.opposite())
+        
+        # space_boundary_poly_tree = clipping(building_poly_tree, translate_poly_tree(first_poly_tree, None, first_plane, plane, is_opposite), "intersection")
 
 # https://github.com/IfcOpenShell/IfcOpenShell/blob/fcc2b9ee13e0505c617b306fe5e29890855ced5e/src/ifcblenderexport/blenderbim/bim/export_ifc.py#L3357
 # https://github.com/IfcOpenShell/IfcOpenShell/blob/fcc2b9ee13e0505c617b306fe5e29890855ced5e/src/ifcblenderexport/blenderbim/bim/export_ifc.py#L1925
