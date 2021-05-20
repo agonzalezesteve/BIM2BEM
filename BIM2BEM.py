@@ -83,7 +83,7 @@ settings.set(settings.USE_WORLD_COORDS, True)
 
 ifc_file = ifcopenshell.open('./test.ifc')
 
-building_element2poly_trees = {}
+building_element2poly_trees = {} # this dictionary saves PolyTrees of every IfcBuildingElement in the model
 for building_element in ifc_file.by_type('IfcBuildingElement'):
   if not (building_element.is_a('IfcWall') or building_element.is_a('IfcSlab')): continue
 
@@ -100,7 +100,7 @@ for building_element in ifc_file.by_type('IfcBuildingElement'):
     plane = get_unit_normal_plane(points)
 
     is_opposite = False
-    poly_trees = [pyclipper.PyPolyNode(), pyclipper.PyPolyNode()]
+    poly_trees = [pyclipper.PyPolyNode(), pyclipper.PyPolyNode()] # two components, one for each orientation of the plane
     for building_element_plane, building_element_poly_trees in plane2poly_trees.items():
       is_opposite = are_equal(building_element_plane, plane.opposite())
       if not (are_equal(building_element_plane, plane) or is_opposite): continue
@@ -123,9 +123,7 @@ for building_element in ifc_file.by_type('IfcBuildingElement'):
     # for polygon2 in pyclipper.PolyTreeToPaths(poly_tree):
       # print(list(map(lambda coord: plane.to_3d(skgeom.Point2(coord[0] / SCALING_FACTOR, coord[1] / SCALING_FACTOR)), polygon2)))
 
-# print(hola)
-
-plane2poly_tree = {}
+plane2poly_tree = {} # this dictionary saves PolyTrees of every plane in the model
 for building_element, plane2poly_trees in building_element2poly_trees.items():
   for plane, poly_trees in plane2poly_trees.items():
     poly_tree = clipping(poly_trees[0], poly_trees[1], "symmetric_difference")
@@ -139,16 +137,14 @@ for building_element, plane2poly_trees in building_element2poly_trees.items():
 
     plane2poly_tree[plane] = poly_tree
 
-count = 0
-for plane, poly_tree in plane2poly_tree.items():
-  print(count)
-  print(plane)
-  for polygon2 in pyclipper.PolyTreeToPaths(poly_tree):
-    print(list(map(lambda coord: plane.to_3d(skgeom.Point2(coord[0] / SCALING_FACTOR, coord[1] / SCALING_FACTOR)), polygon2)))
-  print("")
-  count += 1
-
-print(hola)
+# count = 0
+# for plane, poly_tree in plane2poly_tree.items():
+  # print(count)
+  # print(plane)
+  # for polygon2 in pyclipper.PolyTreeToPaths(poly_tree):
+    # print(list(map(lambda coord: plane.to_3d(skgeom.Point2(coord[0] / SCALING_FACTOR, coord[1] / SCALING_FACTOR)), polygon2)))
+  # print("")
+  # count += 1
 
 def path2polygon3(path, plane):
   return list(map(lambda coord: plane.to_3d(skgeom.Point2(coord[0] / SCALING_FACTOR, coord[1] / SCALING_FACTOR)), path))
@@ -169,9 +165,6 @@ def add_polygon3s(poly_tree, plane, polygon3s):
 polygon3s = []
 for plane, poly_tree in plane2poly_tree.items():
   add_polygon3s(poly_tree, plane, polygon3s)
-
-# for polygon3 in polygon3s:
-  # print(polygon3)
 
 def has_on_plane(plane, point):
   normal = plane.orthogonal_vector()
@@ -235,87 +228,3 @@ for id_polygon_i, polygon3_i in enumerate(polygon3s):
     data.append(1)
 
 n_components, labels = connected_components(csgraph=csr_matrix((np.array(data), (np.array(row), np.array(col))), shape=(len(polygon3s), len(polygon3s))), directed=False, return_labels=True)
-
-print(n_components)
-
-# def get_area(poly_tree):
-  # childs = poly_tree.Childs
-  # if not childs: return 0.0
-
-  # child = childs[0]
-  # area = pyclipper.Area(child.Contour)
-  # for hole in child.Childs:
-    # area -= pyclipper.Area(hole.Contour)
-
-  # return area
-
-# context = ifc_file.by_type("IfcGeometricRepresentationContext")[0]
-# representation_type = "Brep" if ifc_file.schema == "IFC2X3" else "Tessellation"
-# ownet_historys = ifc_file.by_type("IfcOwnerHistory")
-# owner_history = ownet_historys[0] if ownet_historys else ifc_file.createIfcOwnerHistory()
-
-# building_storey2spaces = {}
-# for i in range(0, n_components):
-  # area_max = None
-  # point = None
-
-  # building_storey = None
-  # items = []
-
-  # for id, polygon3 in enumerate(polygon3s):
-    # if not labels[id] == i: continue
-
-    # polygon3_plane = polygon3[0]
-
-    # polygon3_poly_tree = get_poly_tree(polygon3_plane, polygon3[1])
-    # polygon3_poly_tree.depth = 1
-
-    # for hole in polygon3[2]:
-      # hole_poly_tree = get_poly_tree(polygon3_plane, hole).Childs[0]
-      # hole_poly_tree.Parent = polygon3_poly_tree
-      # hole_poly_tree.IsHole = True
-      # hole_poly_tree.depth = 1
-      # polygon3_poly_tree.Childs.append(hole_poly_tree)
-
-      # polygon3_poly_tree.depth = 2
-
-    # for building_element, plane2poly_trees in building_element2poly_trees.items():
-      # for plane, poly_trees in plane2poly_trees.items():
-        # for index, poly_tree in enumerate(poly_trees):
-          # is_opposite = are_equal(polygon3_plane, plane.opposite())
-          # if not (are_equal(polygon3_plane, plane) or is_opposite): continue
-
-          # if get_area(clipping(polygon3_poly_tree, poly_tree, "intersection")) < 1e-6: continue
-
-          # normal = polygon3_plane.orthogonal_vector()
-          # if index:
-            # if is_opposite: normal *= -1
-          # else:
-            # if not is_opposite: normal *= -1
-
-          # if building_element.is_a('IfcSlab') and abs(float(normal * skgeom.Vector3(0, 0, -1))) < math.sqrt(3)/2:
-            # building_storey = building_element.ContainedInStructure[0].RelatingStructure
-
-            # area = get_area(polygon3_poly_tree)
-            # if not area_max or area > area_max:
-              # area_max = area
-              # point = polygon3_poly_tree.Childs[0].Contour[0]
-
-  # shape_representation = ifc_file.createIfcShapeRepresentation(context, "Body", representation_type, items)
-  # product_shape = ifc_file.createIfcProductDefinitionShape(None, None, [shape_representation])
-  # axis2placement = ifc_file.createIfcAxis2Placement3D(ifc_file.createIfcCartesianPoint(tuple(point)), ifcfile.createIfcDirection((0., 0., 1.)), ifcfile.createIfcDirection((1., 0., 0.)))
-  # placement = ifc_file.createIfcLocalPlacement(building_storey.ObjectPlacement, axis2placement)
-  # space = ifc_file.create_entity("IfcSpace", {"OwnerHistory": owner_history, "ObjectPlacement": placement, "Representation": product_shape})
-
-  # if building_storey in building_storey2spaces:
-    # building_storey2spaces[building_storey].append(space)
-  # else:
-    # building_storey2spaces[building_storey] = [space]
-
-# for building_storey, spaces in building_storey2spaces.items():
-  # ifc_file.createIfcRelContainedInSpatialStructure(ifcopenshell.guid.new(), owner_history, None, None, [spaces], building_storey)
-
-# ifc_file.write('./space.ifc')
-
-# https://github.com/IfcOpenShell/IfcOpenShell/blob/fcc2b9ee13e0505c617b306fe5e29890855ced5e/src/ifcblenderexport/blenderbim/bim/export_ifc.py#L3357
-# https://github.com/IfcOpenShell/IfcOpenShell/blob/fcc2b9ee13e0505c617b306fe5e29890855ced5e/src/ifcblenderexport/blenderbim/bim/export_ifc.py#L1925
