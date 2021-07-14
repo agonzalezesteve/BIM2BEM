@@ -46,14 +46,8 @@ def getSubTopologies(topology, subTopologyClass):
     _ = topology.Cells(values)
   elif subTopologyClass == CellComplex:
     _ = topology.CellComplexes(values)
-
-  py_list = []
-  i  =  values.begin()
-  while (i != values.end()):
-    py_list.append(fixTopologyClass(Topology.DeepCopy(i.__deref__())))
-    _ = i.__preinc__()
-
-  return py_list
+    
+  return list(values)
 
 def vertexIndex(v, vertices, tolerance):
   index = None
@@ -117,40 +111,28 @@ for build_elem in ifc_file.by_type('IfcBuildingElement'):
 
   int_bounds = cppyy.gbl.std.list[Shell.Ptr]()
   build_elem_cell.InternalBoundaries(int_bounds)
-  for shell in int_bounds:
-    md = meshData(shell)
-    mesh = bpy.data.meshes.new(name="IfcConnectionSurfaceGeometry")
-    mesh.from_pydata(md[0], [], md[1])
-    obj = object_data_add(bpy.context, mesh)
+  # for shell in int_bounds:
+    # md = meshData(shell)
+    # mesh = bpy.data.meshes.new(name="IfcConnectionSurfaceGeometry")
+    # mesh.from_pydata(md[0], [], md[1])
+    # obj = object_data_add(bpy.context, mesh)
     
   if build_top is None:
     build_top = build_elem_cell
   else:
     build_top = Topology.Merge(build_top, build_elem_cell)
 
+print("----------------")
 int_bounds = cppyy.gbl.std.list[Face.Ptr]()
 getSubTopologies(build_top, CellComplex)[0].InternalBoundaries(int_bounds)
 for face in int_bounds:
-  faces = cppyy.gbl.std.list[Face.Ptr]()
-  faces.push_back(face)
-  shell = Shell.ByFaces(faces, 1e-4)
-  md = meshData(shell)
-  mesh = bpy.data.meshes.new(name="IfcConnectionSurfaceGeometry")
-  mesh.from_pydata(md[0], [], md[1])
-  obj = object_data_add(bpy.context, mesh)
   cells = cppyy.gbl.std.list[Cell.Ptr]()
-  FaceUtility.AdjacentCells(face, build_top, cells)
-
-# ext_boundary = getSubTopologies(build_cc, CellComplex)[0].ExternalBoundary()
-# spaces = getSubTopologies(ext_boundary, Shell)
-# print(len(spaces))
-# int_boundaries = cppyy.gbl.std.list[Face.Ptr]()
-# getSubTopologies(build_cc, CellComplex)[0].InternalBoundaries(int_boundaries)
-# for j, face in enumerate(list(int_boundaries)):
-  # fVertices = getSubTopologies(face, Vertex)
-  # if abs(fVertices[0].X() - fVertices[1].X()) < 1e-6 and abs(fVertices[0].X() - fVertices[2].X()) < 1e-6:
-    # print("  "+str(j+1)+". X: "+str(fVertices[0].X()))
-  # elif abs(fVertices[0].Y() - fVertices[1].Y()) < 1e-6 and abs(fVertices[0].Y() - fVertices[2].Y()) < 1e-6:
-    # print("  "+str(j+1)+". Y: "+str(fVertices[0].Y()))
-  # else:
-    # print("  "+str(j+1)+". Z: "+str(fVertices[0].Z()))
+  _ = FaceUtility.AdjacentCells(face, build_top, cells)
+  print(len(cells))
+  # faces = cppyy.gbl.std.list[Face.Ptr]()
+  # faces.push_back(face)
+  # shell = Shell.ByFaces(faces, 1e-4)
+  # md = meshData(shell)
+  # mesh = bpy.data.meshes.new(name="IfcConnectionSurfaceGeometry")
+  # mesh.from_pydata(md[0], [], md[1])
+  # obj = object_data_add(bpy.context, mesh)
